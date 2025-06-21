@@ -1,0 +1,128 @@
+package com.muamerr.muam3r.modules;
+
+import com.muamerr.muam3r.Module;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.AxeItem;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.SwordItem;
+import net.minecraft.util.math.MathHelper;
+import java.util.List;
+import java.util.Random;
+
+public class KillAuraModule extends Module {
+    private float range = 4.0f;
+    private boolean attackPlayers = true;
+    private boolean attackMobs = false;
+    private boolean tapMode = false;
+    private boolean rotate = true;
+    private boolean silentRotate = false;
+
+    private long lastAttack = 0L;
+    private final Random random = new Random();
+
+    public KillAuraModule() {
+        super("KillAura");
+    }
+
+    @Override
+    public void onEnable() {}
+    @Override
+    public void onDisable() {}
+
+    @Override
+    public void onTick() {
+        if (!isEnabled()) return;
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc.player == null || mc.world == null || mc.currentScreen != null) return;
+
+        if (!isValidWeapon(mc.player.getMainHandStack())) return;
+        if (tapMode && !mc.options.attackKey.isPressed()) return;
+
+        LivingEntity target = getTarget(mc);
+        if (target == null) return;
+
+        float cooldown = mc.player.getAttackCooldownProgress(0);
+        if (cooldown < 0.98f) return;
+        if (random.nextFloat() < 0.07f) return;
+
+        int delay = random.nextInt(35) + 70;
+        if (System.currentTimeMillis() - lastAttack < delay) return;
+
+        if (rotate) {
+            lookAtEntity(mc, target, silentRotate);
+        }
+
+        mc.interactionManager.attackEntity(mc.player, target);
+        mc.player.swingHand(mc.player.getActiveHand());
+        lastAttack = System.currentTimeMillis();
+    }
+
+    private boolean isValidWeapon(ItemStack stack) {
+        return stack.getItem() instanceof SwordItem || stack.getItem() instanceof AxeItem;
+    }
+
+    private LivingEntity getTarget(MinecraftClient mc) {
+        List<Entity> entities = mc.world.getEntities();
+        LivingEntity best = null;
+        double bestDist = range + 1;
+        for (Entity e : entities) {
+            if (!(e instanceof LivingEntity target)) continue;
+            if (target == mc.player || target.isDead() || target.isInvisible()) continue;
+            if (!mc.player.canSee(target)) continue;
+            if (target instanceof PlayerEntity && !attackPlayers) continue;
+            if (!(target instanceof PlayerEntity) && !attackMobs) continue;
+            double dist = mc.player.distanceTo(target);
+            if (dist < bestDist && dist <= range) {
+                bestDist = dist;
+                best = target;
+            }
+        }
+        return best;
+    }
+
+    private void lookAtEntity(MinecraftClient mc, LivingEntity target, boolean silent) {
+        double dx = target.getX() - mc.player.getX();
+        double dy = target.getBodyY(0.5) - mc.player.getEyeY();
+        double dz = target.getZ() - mc.player.getZ();
+        double dist = Math.sqrt(dx * dx + dz * dz);
+        float yaw = (float) (MathHelper.atan2(dz, dx) * (180F / Math.PI)) - 90F;
+        float pitch = (float) (-(MathHelper.atan2(dy, dist) * (180F / Math.PI)));
+
+        yaw += (random.nextFloat() - 0.5f) * 3f;
+        pitch += (random.nextFloat() - 0.5f) * 2f;
+
+        if (!silent) {
+            mc.player.setYaw(yaw);
+            mc.player.setPitch(pitch);
+        }
+    }
+
+    @Override
+    public void drawSettings(int x, int y, int width, int height) {
+        int offsetY = y;
+        int spacing = 16;
+
+        drawTextWithShadow("Range: " + String.format("%.1f", range), x, offsetY, 0xFFFFFF);
+        range = drawSlider("killaura_range", x + 80, offsetY, 100, range, 1.0f, 6.0f);
+        offsetY += spacing;
+
+        attackPlayers = drawToggle("Attack Players", x, offsetY, attackPlayers);
+        offsetY += spacing;
+
+        attackMobs = drawToggle("Attack Mobs", x, offsetY, attackMobs);
+        offsetY += spacing;
+
+        tapMode = drawToggle("Tap Mode", x, offsetY, tapMode);
+        offsetY += spacing;
+
+        rotate = drawToggle("Rotate", x, offsetY, rotate);
+        offsetY += spacing;
+
+        if (rotate) {
+            silentRotate = drawToggle("Silent Rotate", x, offsetY, silentRotate);
+        }
+    }
+}
